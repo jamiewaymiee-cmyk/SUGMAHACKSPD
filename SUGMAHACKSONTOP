@@ -1584,6 +1584,8 @@ Settings:CreateKeybind("Quick Save Key", "QuickSaveKey", Enum.KeyCode.F5, functi
 end)
 
 Settings:CreateButton("Destroy UI", function()
+	_G.SugmaLoaded = false
+	wait(0.1)
 	Lib:UIDelete()
 end)
 
