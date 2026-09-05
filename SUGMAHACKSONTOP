@@ -1102,7 +1102,7 @@ if #disabled > 0 then
     Lib:Notify("UNC Test", "Missing: " .. table.concat(disabled, ", "), 5)
 end
 
-local Gui = Lib:CreateWindow({Title = "SUGMAHACKS.CC - Enhanced v2.0", Settings = false})
+local Gui = Lib:CreateWindow({Title = "SUGMAHACKS.CC - V1.2", Settings = false})
 
 if silentAimAvailable then
     local SATab = Gui:CreateTab("Silent Aim")
@@ -1895,7 +1895,7 @@ end)
 
 ensureConfigFolder()
 
-Lib:Notify("SUGMAHACKS.CC", "Enhanced Edition Loaded!", 5)
+Lib:Notify("SUGMAHACKS.CC", "V1.2 Loaded.", 5)
 Lib:Notify("UNC Test", #enabled .. " features available", 3)
 
 if silentAimAvailable then
