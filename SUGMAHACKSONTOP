@@ -74,20 +74,28 @@ local espAIHealth = {}
 local vmAimPart, currentInvTarget, frozenTarget = nil, nil, nil
 local freezeHRPMode, freezeHRPActive = "Always", false
 local origFog = {End = Light.FogEnd, Start = Light.FogStart, Color = Light.FogColor}
+local origLighting = {
+	ClockTime = Light.ClockTime,
+	Brightness = Light.Brightness,
+	GlobalShadows = Light.GlobalShadows,
+	Ambient = Light.Ambient,
+	OutdoorAmbient = Light.OutdoorAmbient
+}
 local selSight, selDev, aimP, sens, fovR, showF, trigM = "ACOG", "Flashlight", "Head", 0, 100, false, "Hold Key"
 local espP, espB, espW, espI, espA, invImageMode = false, false, false, false, false, false
 local espNameTag, espBox, espSkeleton, espVelocity, espDist, espLookVec, espRandColor = false, false, false, false, false, false, false
-local fbEn, nvEn, fovZoomDisabled, isRightClickZooming = false, false, false, false
+local fbEn, softFbEn, nvEn, fovZoomDisabled, isRightClickZooming = false, false, false, false, false
 local noFogEn, zeroAimVM, iChk, iOff = false, false, false, 0
 local fmChanged, boltOriginals, priS = {}, {}, {ItemBack1=1,ItemBack2=1,ItemHip1=1,ClothingHeadware=1,ClothingLegArmor=1,ClothingChestRig=1}
 local sTable = {"ACOG","ELCAN","HoloSight","LPVO","OKP7","PSO1","Reapir","Scope6X","SniperScope","T1Sight","SRO","PN6K5","T12W"}
 local lastTarget, tarG = nil, nil
 local Lib, configListCache = nil, {}
+local connections = {}
 
 local fovC
 if UNCFeatures.Drawing then
 	fovC = Drawing.new("Circle")
-	fovC.Thickness, fovC.Color, fovC.Transparency, fovC.Filled, fovC.Visible = 1, Color3.new(1, 1, 1), 1, false, false
+	fovC.Thickness, fovC.Color, fovC.Transparency, fovC.Filled, fovC.Visible = 2, Color3.new(1, 1, 1), 0.5, false, false
 end
 
 local function notify(title, msg, duration)
@@ -1019,26 +1027,130 @@ local function getClst()
 	return c
 end
 
-Players.PlayerRemoving:Connect(function(p)
+local function cleanupAll()
+	notify("Cleanup", "Reverting all changes...", 2)
+
+	-- Disconnect all connections
+	for _, conn in pairs(connections) do
+		if conn and conn.Disconnect then
+			pcall(function() conn:Disconnect() end)
+		end
+	end
+	connections = {}
+
+	-- Clear ESP
+	clrEsp()
+	clrDrw()
+
+	-- Revert lighting
+	Light.ClockTime = origLighting.ClockTime
+	Light.Brightness = origLighting.Brightness
+	Light.GlobalShadows = origLighting.GlobalShadows
+	Light.Ambient = origLighting.Ambient
+	Light.OutdoorAmbient = origLighting.OutdoorAmbient
+
+	-- Revert fog
+	Light.FogEnd = origFog.End
+	Light.FogStart = origFog.Start
+	Light.FogColor = origFog.Color
+
+	-- Remove script-added sights and attachments
+	for _, item in pairs(pInv:GetChildren()) do
+		local att = item:FindFirstChild("Attachments")
+		if att then
+			for _, a in pairs(att:GetChildren()) do
+				if a:GetAttribute("ScriptAdded") then
+					a:Destroy()
+				end
+			end
+		end
+	end
+
+	-- Revert firemodes
+	for gn, orig in pairs(fmChanged) do
+		local o = pInv:FindFirstChild(gn)
+		if o then
+			o:SetAttribute("FireMode", orig.FireMode)
+			o:SetAttribute("FireModeIndex", orig.FireModeIndex)
+			o:SetAttribute("FireModeIndexS", 1)
+		end
+	end
+	fmChanged = {}
+
+	-- Revert bolt actions
+	for gn, orig in pairs(boltOriginals) do
+		local o = pInv:FindFirstChild(gn)
+		if o then
+			o:SetAttribute("FireMode", orig.FireMode)
+			o:SetAttribute("FireModeIndex", orig.FireModeIndex)
+			o:SetAttribute("FireModeIndexS", 1)
+		end
+	end
+	boltOriginals = {}
+
+	-- Unfreeze targets
+	unanchorFrozen()
+
+	-- Reset FOV
+	cam.FieldOfView = 70
+
+	-- Disable silent aim
+	if silentAimAvailable then
+		silentAim.Enabled = false
+	end
+
+	-- Hide FOV circle
+	if fovC then
+		fovC.Visible = false
+		pcall(function() fovC:Remove() end)
+	end
+	
+	-- Disable Jesus mode
+	_G.JesusEnabled = false
+
+	-- Reset visuals
+	pcall(function()
+		lplr.PlayerGui.NoInsetGui.MainFrame.ScreenEffects.Visible = true
+	end)
+
+	-- Remove inventory viewer GUI
+	pcall(function()
+		local g = lplr.PlayerGui:FindFirstChild("_InvImgGui")
+		if g then g:Destroy() end
+	end)
+
+	-- Reset dead body ESP
+	for i, v in pairs(espD) do
+		pcall(function() v:Destroy() end)
+		espD[i] = nil
+	end
+
+	-- Clear global flag
+	_G.SugmaLoaded = false
+
+	notify("Cleanup", "All changes reverted!", 2)
+end
+
+table.insert(connections, Players.PlayerRemoving:Connect(function(p)
 	if p.Character then
 		clrEspEntry(p.Character)
 		playerColors[p.Name] = nil
 	end
-end)
+end))
 
 for _, p in pairs(Players:GetPlayers()) do
-	p.CharacterRemoving:Connect(function(char)
+	table.insert(connections, p.CharacterRemoving:Connect(function(char)
 		clrEspEntry(char)
-	end)
+	end))
 end
 
-Players.PlayerAdded:Connect(function(p)
-	p.CharacterRemoving:Connect(function(char)
+table.insert(connections, Players.PlayerAdded:Connect(function(p)
+	table.insert(connections, p.CharacterRemoving:Connect(function(char)
 		clrEspEntry(char)
-	end)
-end)
+	end))
+end))
 
-RunS.Heartbeat:Connect(function()
+table.insert(connections, RunS.Heartbeat:Connect(function()
 	local char = lplr.Character
 	if not char or not char:FindFirstChild("HumanoidRootPart") or not _G.JesusEnabled then return end
 
@@ -1062,7 +1174,7 @@ RunS.Heartbeat:Connect(function()
 		saveConfig(Config.CurrentConfig)
 		lastSaveTime = tick()
 	end
-end)
+end))
 
 Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jamiewaymiee-cmyk/SUGMA-LIBRARY/refs/heads/main/SUGMAHACKS", true))()
 
@@ -1277,6 +1389,25 @@ end)
 local Vis = Gui:CreateTab("Visuals")
 Vis:CreateToggle("FullBright", "Fullbright", false, function(v)
 	fbEn = v
+	if not v then
+		-- Revert to original lighting
+		Light.ClockTime = origLighting.ClockTime
+		Light.Brightness = origLighting.Brightness
+		Light.GlobalShadows = origLighting.GlobalShadows
+		Light.Ambient = origLighting.Ambient
+		Light.OutdoorAmbient = origLighting.OutdoorAmbient
+	end
+end)
+Vis:CreateToggle("Soft FullBright", "SoftFullbright", false, function(v)
+	softFbEn = v
+	if not v and not fbEn then
+		-- Revert to original lighting
+		Light.ClockTime = origLighting.ClockTime
+		Light.Brightness = origLighting.Brightness
+		Light.GlobalShadows = origLighting.GlobalShadows
+		Light.Ambient = origLighting.Ambient
+		Light.OutdoorAmbient = origLighting.OutdoorAmbient
+	end
 end)
 Vis:CreateSlider("World Time", "TimeVal", 0, 24, 12)
 Vis:CreateToggle("Remove Visor", "NoVisor", false, function(v)
@@ -1584,7 +1715,7 @@ Settings:CreateKeybind("Quick Save Key", "QuickSaveKey", Enum.KeyCode.F5, functi
 end)
 
 Settings:CreateButton("Destroy UI", function()
-	_G.SugmaLoaded = false
+	cleanupAll()
 	wait(0.1)
 	Lib:UIDelete()
 end)
@@ -1597,13 +1728,13 @@ end
 Settings:CreateLabel("Silent Aim: " .. (silentAimAvailable and "Available" or "Unavailable"))
 Settings:CreateLabel("Last Config: " .. (Config.LastConfig ~= "" and Config.LastConfig or "None"))
 
-UIS.InputChanged:Connect(function(i)
+table.insert(connections, UIS.InputChanged:Connect(function(i)
 	if i.UserInputType == Enum.UserInputType.MouseWheel and iChk and not invImageMode then
 		iOff = i.Position.Z > 0 and math.max(0, iOff - 1) or iOff + 1
 	end
-end)
+end))
 
-UIS.InputBegan:Connect(function(i, gp)
+table.insert(connections, UIS.InputBegan:Connect(function(i, gp)
 	if gp then return end
 	if i.UserInputType == Enum.UserInputType.MouseButton2 then
 		isRightClickZooming = true
@@ -1614,13 +1745,13 @@ UIS.InputBegan:Connect(function(i, gp)
 		if silentAimAvailable then silentAim.Enabled = false end
 		notify("PANIC", "All features disabled!", 3)
 	end
-end)
+end))
 
-UIS.InputEnded:Connect(function(i)
+table.insert(connections, UIS.InputEnded:Connect(function(i)
 	if i.UserInputType == Enum.UserInputType.MouseButton2 then
 		isRightClickZooming = false
 	end
-end)
+end))
 
 task.spawn(function()
 	while true do
@@ -1642,19 +1773,18 @@ task.spawn(function()
 	end
 end)
 
-RunS.Heartbeat:Connect(function()
+table.insert(connections, RunS.Heartbeat:Connect(function()
 	if Lib.Flags.TpWalk and lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") and lplr.Character:FindFirstChild("Humanoid") then
 		local hrp, hum = lplr.Character.HumanoidRootPart, lplr.Character.Humanoid
 		if hum.MoveDirection.Magnitude > 0 then
 			hrp.CFrame = hrp.CFrame + (hum.MoveDirection * (Lib.Flags.TpWalkSpeed or 0.05))
 		end
 	end
-end)
+end))
 
-RunS.RenderStepped:Connect(function()
+table.insert(connections, RunS.RenderStepped:Connect(function()
 	sens = Lib.Flags.AimSens or 0
 	fovR = Lib.Flags.FOVRad or 100
-	showF = Lib.Flags.ShowFOV or false
 
 	local tVal = Lib.Flags.TimeVal or 12
 
@@ -1663,6 +1793,11 @@ RunS.RenderStepped:Connect(function()
 		Light.GlobalShadows = false
 		Light.Ambient = Color3.new(1, 1, 1)
 		Light.OutdoorAmbient = Color3.new(1, 1, 1)
+	elseif softFbEn then
+		Light.ClockTime, Light.Brightness = 14, 1.5
+		Light.GlobalShadows = true
+		Light.Ambient = Color3.new(0.7, 0.7, 0.7)
+		Light.OutdoorAmbient = Color3.new(0.7, 0.7, 0.7)
 	else
 		Light.ClockTime = tVal
 		Light.GlobalShadows = true
@@ -1725,14 +1860,19 @@ RunS.RenderStepped:Connect(function()
 	end
 
 	if UNCFeatures.Drawing and fovC then
-		local showAimFOV = showF and Lib.Flags.AimbotToggle
+		local showAimFOV = Lib.Flags.ShowFOV
 		local showSilentFOV = Lib.Flags.SilentShowFOV and silentAimAvailable and silentAim.Enabled
 
 		fovC.Visible = showAimFOV or showSilentFOV
 
 		if fovC.Visible then
 			fovC.Position = UIS:GetMouseLocation()
-			fovC.Radius = silentAim.SharedFOV and fovR or silentAim.FOV
+			fovC.Color = showSilentFOV and Color3.new(0, 1, 0) or Color3.new(1, 1, 1) -- Green for silent, white for regular
+			if showSilentFOV and not silentAim.SharedFOV then
+				fovC.Radius = silentAim.FOV
+			else
+				fovC.Radius = fovR
+			end
 		end
 	end
 
@@ -1889,7 +2029,7 @@ RunS.RenderStepped:Connect(function()
 
 	local aH = getB("workspace.AiZones.Sawmill.Anton")
 	lA:Set(aH and (aH.Health > 0 and "Anton: " .. math.floor(aH.Health) or "Anton: DEAD") or "Anton: Not Spawned")
-end)
+end))
 
 ensureConfigFolder()
 
