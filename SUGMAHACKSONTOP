@@ -90,6 +90,249 @@ if UNCFeatures.Drawing then
     fovC.Thickness, fovC.Color, fovC.Transparency, fovC.Filled, fovC.Visible = 1, Color3.new(1, 1, 1), 1, false, false
 end
 
+-- INVENTORY FUNCTIONS (READDED)
+local function getStack(item)
+    local amt = item:GetAttribute("Amount") or item:GetAttribute("Count") or item:GetAttribute("Quantity") or item:GetAttribute("Stack")
+    if not amt then
+        for _, a in pairs({"amount", "count", "quantity", "stack", "stackSize", "StackSize", "stackCount"}) do
+            local v = item:GetAttribute(a)
+            if v and type(v) == "number" then
+                amt = v
+                break
+            end
+        end
+    end
+    return (type(amt) == "number" and amt > 0) and amt or 1
+end
+
+local function fmtItm(i)
+    local a = getStack(i)
+    return a > 1 and i.Name .. " [" .. a .. "x]" or i.Name
+end
+
+local function fmtWep(w)
+    local t, l, f = w.Name, {}, w:FindFirstChild("Attachments")
+    if f then
+        for _, a in pairs(f:GetChildren()) do
+            local s = a:GetAttribute("Slot")
+            if s == "Sight" or s == "Magazine" or s == "Extra" then
+                local n = a.Name
+                if s == "Magazine" then
+                    n = n .. "(" .. (a:GetAttribute("LoadedAmmo") or 0) .. ")"
+                end
+                table.insert(l, n)
+            end
+        end
+    end
+    return #l > 0 and t .. " [" .. table.concat(l, ", ") .. "]" or t .. " [None]"
+end
+
+local function isGun(n)
+    local i = iList:FindFirstChild(n)
+    if i then
+        local ip = i:FindFirstChild("ItemProperties")
+        if ip and ip:GetAttribute("ItemType") == "RangedWeapon" then
+            return true
+        end
+    end
+    return false
+end
+
+local function getIcon(n)
+    return iconCache[n]
+end
+
+local function buildInvData(pinv)
+    local eq, bp = {}, {}
+    for _, v in pairs(pinv:GetChildren()) do
+        local sl = v:GetAttribute("Slot")
+        local ni = v:FindFirstChild("Inventory")
+        if sl and priS[sl] then
+            table.insert(eq, {item = v, slot = sl})
+        else
+            table.insert(bp, v)
+        end
+        if ni then
+            for _, k in pairs(ni:GetChildren()) do
+                table.insert(bp, k)
+            end
+        end
+    end
+    return eq, bp
+end
+
+local function mkBadge(parent, txt)
+    local l = Instance.new("TextLabel", parent)
+    l.Size, l.Position = UDim2.new(1, -2, 0, 13), UDim2.new(0, 0, 0, 0)
+    l.BackgroundTransparency, l.TextColor3 = 1, Color3.fromRGB(255, 220, 50)
+    l.Font, l.TextSize, l.Text = Enum.Font.GothamBold, 10, txt
+    l.TextXAlignment, l.TextYAlignment, l.TextStrokeTransparency, l.ZIndex = Enum.TextXAlignment.Right, Enum.TextYAlignment.Top, 0, 5
+end
+
+local function getAttachIcons(inv)
+    local icons = {}
+    local att = inv:FindFirstChild("Attachments")
+    if att then
+        for _, a in pairs(att:GetChildren()) do
+            local s = a:GetAttribute("Slot")
+            if s == "Sight" or s == "Magazine" or s == "Extra" or s == "Barrel" or s == "UnderBarrel" then
+                local ic = getIcon(a.Name)
+                if ic then
+                    table.insert(icons, {icon = ic, name = a.Name})
+                end
+            end
+        end
+    end
+    return icons
+end
+
+local function drawImageInv(pinv, tName)
+    clrDrw()
+    local sg = lplr.PlayerGui:FindFirstChild("_InvImgGui") or Instance.new("ScreenGui", lplr.PlayerGui)
+    sg.Name, sg.ResetOnSpawn, sg.IgnoreGuiInset = "_InvImgGui", false, true
+    for _, c in pairs(sg:GetChildren()) do c:Destroy() end
+    table.insert(iDrw, sg)
+    
+    local sz, pad, cols = 58, 4, 6
+    local pw = cols * (sz + pad) + pad + 10
+    local eq, bp = buildInvData(pinv)
+    local bpSlice = {}
+    for i = 1 + iOff, math.min(#bp, iOff + cols * 8) do
+        table.insert(bpSlice, bp[i])
+    end
+    
+    local eqH = #eq > 0 and (18 + math.ceil(#eq / cols) * (sz + pad) + pad) or 0
+    local bpH = 18 + math.ceil(math.max(#bpSlice, 1) / cols) * (sz + pad) + pad
+    local ph = 30 + eqH + bpH + 10
+    
+    -- Improved positioning to prevent UI going off-screen
+    local mp = UIS:GetMouseLocation()
+    local screenSize = cam.ViewportSize
+    local px = math.clamp(mp.X + 16, pad, screenSize.X - pw - pad)
+    local py = math.clamp(mp.Y - ph/2, pad, screenSize.Y - ph - pad)
+    
+    local panel = Instance.new("Frame", sg)
+    panel.Size, panel.Position = UDim2.new(0, pw, 0, ph), UDim2.new(0, px, 0, py)
+    panel.BackgroundColor3, panel.BackgroundTransparency, panel.BorderSizePixel = Color3.fromRGB(15, 15, 15), 0.1, 0
+    
+    local pc = Instance.new("UICorner", panel)
+    pc.CornerRadius = UDim.new(0, 10)
+    
+    local st = Instance.new("UIStroke", panel)
+    st.Color, st.Thickness, st.Transparency = Color3.fromRGB(55, 55, 55), 1, 0
+    
+    local ti = Instance.new("TextLabel", panel)
+    ti.Size, ti.Position = UDim2.new(1, -8, 0, 30), UDim2.new(0, 8, 0, 0)
+    ti.BackgroundTransparency, ti.TextColor3 = 1, Color3.fromRGB(255, 255, 255)
+    ti.Font, ti.TextSize, ti.Text, ti.TextXAlignment = Enum.Font.GothamBold, 13, "Viewing " .. tName .. " | Inventory", Enum.TextXAlignment.Left
+    
+    local cy = 30
+    
+    local function drawSec(lbl, items, isEq)
+        if #items == 0 then return end
+        
+        local lb = Instance.new("TextLabel", panel)
+        lb.Size, lb.Position = UDim2.new(1, -8, 0, 18), UDim2.new(0, 8, 0, cy)
+        lb.BackgroundTransparency, lb.TextColor3 = 1, Color3.fromRGB(155, 155, 155)
+        lb.Font, lb.TextSize, lb.Text, lb.TextXAlignment = Enum.Font.GothamBold, 11, lbl, Enum.TextXAlignment.Left
+        cy = cy + 18
+        
+        local col, rowY = 0, cy
+        for _, entry in pairs(items) do
+            local v = isEq and entry.item or entry
+            local ic = getIcon(v.Name)
+            local fx = pad / 2 + col * (sz + pad)
+            
+            local sf = Instance.new("Frame", panel)
+            sf.Size, sf.Position = UDim2.new(0, sz, 0, sz), UDim2.new(0, fx, 0, rowY)
+            sf.BackgroundColor3, sf.BackgroundTransparency, sf.BorderSizePixel = Color3.fromRGB(32, 32, 32), 0.2, 0
+            
+            local sfc = Instance.new("UICorner", sf)
+            sfc.CornerRadius = UDim.new(0, 8)
+            
+            if ic and ic ~= "" then
+                local img = Instance.new("ImageLabel", sf)
+                img.Size, img.Position = UDim2.new(0, sz - 8, 0, sz - 8), UDim2.new(0, 4, 0, 4)
+                img.BackgroundTransparency, img.Image, img.ScaleType = 1, ic, Enum.ScaleType.Fit
+                
+                if isGun(v.Name) then
+                    local ai = getAttachIcons(v)
+                    local ax = 0
+                    for _, a in pairs(ai) do
+                        local aF = Instance.new("Frame", sf)
+                        aF.Size, aF.Position = UDim2.new(0, 16, 0, 16), UDim2.new(0, ax, 0, sz - 18)
+                        aF.BackgroundColor3, aF.BackgroundTransparency, aF.BorderSizePixel = Color3.fromRGB(18, 18, 18), 0.15, 0
+                        
+                        local aFc = Instance.new("UICorner", aF)
+                        aFc.CornerRadius = UDim.new(0, 3)
+                        
+                        local aI = Instance.new("ImageLabel", aF)
+                        aI.Size, aI.BackgroundTransparency, aI.Image, aI.ScaleType = UDim2.new(1, 0, 1, 0), 1, a.icon, Enum.ScaleType.Fit
+                        ax = ax + 18
+                    end
+                end
+            else
+                local nl = Instance.new("TextLabel", sf)
+                nl.Size, nl.Position = UDim2.new(1, -2, 1, -2), UDim2.new(0, 1, 0, 1)
+                nl.BackgroundTransparency, nl.TextColor3 = 1, Color3.fromRGB(175, 175, 175)
+                nl.Font, nl.TextSize, nl.Text = Enum.Font.Gotham, 9, v.Name
+                nl.TextWrapped, nl.TextXAlignment, nl.TextYAlignment = true, Enum.TextXAlignment.Center, Enum.TextYAlignment.Center
+            end
+            
+            mkBadge(sf, "x" .. getStack(v))
+            col = col + 1
+            if col >= cols then
+                col = 0
+                rowY = rowY + sz + pad
+            end
+        end
+        cy = cy + math.ceil(math.max(#items, 1) / cols) * (sz + pad) + pad
+    end
+    
+    if #eq > 0 then
+        drawSec("── EQUIPPED ──", eq, true)
+    end
+    drawSec("── BACKPACK ──", bpSlice, false)
+end
+
+local function drawTextInv(pinv, tName)
+    clrDrw()
+    local mp = UIS:GetMouseLocation()
+    -- Improved positioning for text mode
+    local s = Vector2.new(math.min(mp.X + 20, cam.ViewportSize.X - 300), mp.Y)
+    local eq, bp = buildInvData(pinv)
+    local eqF, bpF = {}, {}
+    
+    for _, e in pairs(eq) do
+        table.insert(eqF, {
+            T = (e.slot:find("Back") or e.slot:find("Hip")) and fmtWep(e.item) or fmtItm(e.item),
+            S = e.slot
+        })
+    end
+    
+    for _, v in pairs(bp) do
+        table.insert(bpF, fmtItm(v))
+    end
+    
+    local y = 0
+    local function mk(txt, sz, col)
+        local d = Drawing.new("Text")
+        d.Text, d.Size, d.Outline, d.Color, d.Position, d.Visible = txt, sz, true, col, s + Vector2.new(0, y), true
+        table.insert(iDrw, d)
+        y = y + sz + 2
+    end
+    
+    mk(tName, 18, Color3.new(1, 1, 1))
+    for _, v in pairs(eqF) do
+        mk("[" .. v.S .. "] " .. v.T, 15, Color3.new(0, 1, 1))
+    end
+    y = y + 5
+    mk("BACKPACK", 15, Color3.new(1, 0.6, 0))
+    for i = 1 + iOff, math.min(#bpF, iOff + 20) do
+        mk(bpF[i], 14, Color3.new(0, 1, 0))
+    end
+end
+
 local function notify(title, msg, duration)
     if Lib then
         Lib:Notify(title, msg, duration or Config.NotificationDuration)
@@ -1006,6 +1249,29 @@ Vis:CreateToggle("Allow ADS Zoom (RMB)", "AllowADS", true, function(v)
     fovZoomDisabled = not v
 end)
 
+-- INVENTORY CHECKER TAB (READDED)
+local Inv = Gui:CreateTab("InvChecker")
+Inv:CreateToggle("InvViewer", "InvViewer", false, function(v)
+    espI = v
+    if not v then
+        clrDrw()
+        iChk = false
+        pcall(function()
+            local g = lplr.PlayerGui:FindFirstChild("_InvImgGui")
+            if g then g:Destroy() end
+        end)
+    end
+end)
+Inv:CreateToggle("Image Mode", "InvImageMode", false, function(v)
+    invImageMode = v
+    clrDrw()
+    pcall(function()
+        local g = lplr.PlayerGui:FindFirstChild("_InvImgGui")
+        if g then g:Destroy() end
+    end)
+end)
+Inv:CreateKeybind("View Key", "InvKey", Enum.KeyCode.V)
+
 local PlyTab = Gui:CreateTab("Player")
 PlyTab:CreateToggle("Dynamic Speedhack", "DynSpeed", false)
 PlyTab:CreateToggle("Tpwalk", "TpWalk", false)
@@ -1276,6 +1542,7 @@ end
 Settings:CreateLabel("Silent Aim: " .. (silentAimAvailable and "Available" or "Unavailable"))
 Settings:CreateLabel("Last Config: " .. (Config.LastConfig ~= "" and Config.LastConfig or "None"))
 
+-- INVENTORY INPUT HANDLING (READDED)
 UIS.InputChanged:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseWheel and iChk and not invImageMode then
         iOff = i.Position.Z > 0 and math.max(0, iOff - 1) or iOff + 1
@@ -1473,6 +1740,46 @@ RunS.RenderStepped:Connect(function()
                     mouse1release()
                 end
             end
+        end
+    end
+    
+    -- INVENTORY CHECKING LOGIC (READDED)
+    if espI and isK("InvKey") then
+        local t = getClst()
+        if t then
+            if currentInvTarget ~= t then
+                currentInvTarget = t
+                clrDrw()
+                iChk = true
+            end
+            iChk = true
+            local rd = RS:FindFirstChild("Players")
+            local pinv = rd and rd:FindFirstChild(t.Name) and rd[t.Name]:FindFirstChild("Inventory")
+            if pinv then
+                if invImageMode then
+                    drawImageInv(pinv, t.Name)
+                else
+                    drawTextInv(pinv, t.Name)
+                end
+            end
+        else
+            if iChk then
+                iChk = false
+                clrDrw()
+                pcall(function()
+                    local g = lplr.PlayerGui:FindFirstChild("_InvImgGui")
+                    if g then g:Destroy() end
+                end)
+            end
+        end
+    else
+        if iChk then
+            iChk = false
+            clrDrw()
+            pcall(function()
+                local g = lplr.PlayerGui:FindFirstChild("_InvImgGui")
+                if g then g:Destroy() end
+            end)
         end
     end
     
