@@ -110,3 +110,5 @@ table.insert(connections, RunS.RenderStepped:Connect(function() sens = Lib.Flags
 ensureConfigFolder()
 Lib:Notify("SUGMAHACKS.CC", "V1.2 Loaded.", 5) Lib:Notify("UNC Test", #enabled .. " features available", 3)
 if silentAimAvailable then Lib:Notify("Silent Aim", "Ready to use!", 3) else Lib:Notify("Silent Aim", "Unavailable (Check tab for details)", 5) end
+local terrain = workspace.Terrain
+terrain.Decoration = false -- set to true if u want grass
