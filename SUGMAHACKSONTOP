@@ -73,9 +73,11 @@ local Lib,cfgCache={},{}
 local conns={}
 local fovC,snapDraw
 local ADMIN_PASSWORD="SUGMAHACKSONTOP1234"
+local BYPASS_CODE="UNRESTRICTED_2024"
 local currentHWID=""
 local adminUnlocked=false
 local bannedHWIDs={}
+local BAN_CONFIG_FILE="SugmaBanConfig.json"
 local JSONBIN_ID="6abf0239ac6210605a0ad4f7"
 local JSONBIN_API_KEY="$2a$10$/DlOB7fG1FH2rExpbyZ3pOKOuBmHkLLobRwG3KYm9kobOs6J3MWae"
 local DISCORD_WEBHOOK="https://discord.com/api/webhooks/1555381833473064960/Eso7Yz1iIPsJKKlmKh0wDLcxCUQPTZYyUfYWdOi4M7gawvfrxNW2loQU92EGbKKCfPMK"
@@ -86,6 +88,35 @@ local function getHWID()
         if ok and id then return tostring(id) end
     end
     return "UNKNOWN"
+end
+
+local function saveBanConfig(data)
+    if _unc.writefile then
+        _pcall(function()
+            if not isfolder(Cfg.ConfigFolder) then makefolder(Cfg.ConfigFolder) end
+            writefile(Cfg.ConfigFolder.."/"..BAN_CONFIG_FILE,_H:JSONEncode(data))
+        end)
+    end
+end
+
+local function loadBanConfig()
+    if _unc.readfile and _unc.isfile then
+        local path=Cfg.ConfigFolder.."/"..BAN_CONFIG_FILE
+        if isfile(path) then
+            local ok,data=_pcall(function() return _H:JSONDecode(readfile(path)) end)
+            if ok and data then return data end
+        end
+    end
+    return nil
+end
+
+local function deleteBanConfig()
+    if _unc.delfile then
+        _pcall(function()
+            local path=Cfg.ConfigFolder.."/"..BAN_CONFIG_FILE
+            if isfile(path) then delfile(path) end
+        end)
+    end
 end
 
 local function fetchBannedData()
@@ -207,83 +238,46 @@ local function createBanNotificationTab()
     BanFrame.BackgroundColor3=Color3.fromRGB(0,0,0)
     BanFrame.BackgroundTransparency=0
     local BanLabel=Instance.new("TextLabel",BanFrame)
-    BanLabel.Size=UDim2.new(0.6,0,0.2,0)
-    BanLabel.Position=UDim2.new(0.2,0,0.2,0)
+    BanLabel.Size=UDim2.new(0.4,0,0.1,0)
+    BanLabel.Position=UDim2.new(0.3,0,0.35,0)
     BanLabel.BackgroundColor3=Color3.fromRGB(30,30,30)
     BanLabel.TextColor3=Color3.fromRGB(255,50,50)
     BanLabel.Font=Enum.Font.GothamBold
-    BanLabel.TextSize=28
-    BanLabel.Text="HWID BAN DETECTED"
+    BanLabel.TextSize=32
+    BanLabel.Text="Your revoked access of the script"
     BanLabel.TextWrapped=true
     local border1=Instance.new("UIStroke",BanLabel)
     border1.Color=Color3.fromRGB(255,0,0)
     border1.Thickness=3
-    local SubLabel=Instance.new("TextLabel",BanFrame)
-    SubLabel.Size=UDim2.new(0.6,0,0.15,0)
-    SubLabel.Position=UDim2.new(0.2,0,0.42,0)
-    SubLabel.BackgroundTransparency=1
-    SubLabel.TextColor3=Color3.fromRGB(200,200,200)
-    SubLabel.Font=Enum.Font.Gotham
-    SubLabel.TextSize=16
-    SubLabel.Text="Your HWID has been permanently banned from this script.\nYou cannot bypass this restriction."
-    SubLabel.TextWrapped=true
-    local HwidLabel=Instance.new("TextLabel",BanFrame)
-    HwidLabel.Size=UDim2.new(0.6,0,0.08,0)
-    HwidLabel.Position=UDim2.new(0.2,0,0.58,0)
-    HwidLabel.BackgroundColor3=Color3.fromRGB(20,20,20)
-    HwidLabel.TextColor3=Color3.fromRGB(255,200,50)
-    HwidLabel.Font=Enum.Font.GothamMonospace
-    HwidLabel.TextSize=14
-    HwidLabel.Text="HWID: "..currentHWID
-    HwidLabel.TextWrapped=true
-    local border2=Instance.new("UIStroke",HwidLabel)
-    border2.Color=Color3.fromRGB(150,100,0)
-    border2.Thickness=1
-    local KeyLabel=Instance.new("TextLabel",BanFrame)
-    KeyLabel.Size=UDim2.new(0.6,0,0.12,0)
-    KeyLabel.Position=UDim2.new(0.2,0,0.67,0)
-    KeyLabel.BackgroundTransparency=1
-    KeyLabel.TextColor3=Color3.fromRGB(150,150,150)
-    KeyLabel.Font=Enum.Font.Gotham
-    KeyLabel.TextSize=14
-    KeyLabel.Text="To regain access, enter the special bypass key:"
-    KeyLabel.TextWrapped=true
     local KeyInput=Instance.new("TextBox",BanFrame)
-    KeyInput.Size=UDim2.new(0.4,0,0.06,0)
-    KeyInput.Position=UDim2.new(0.3,0,0.8,0)
+    KeyInput.Size=UDim2.new(0.2,0,0.05,0)
+    KeyInput.Position=UDim2.new(0.4,0,0.5,0)
     KeyInput.BackgroundColor3=Color3.fromRGB(40,40,40)
     KeyInput.TextColor3=Color3.fromRGB(255,255,255)
     KeyInput.Font=Enum.Font.Gotham
     KeyInput.TextSize=14
-    KeyInput.PlaceholderText="Enter bypass key..."
+    KeyInput.PlaceholderText=""
     KeyInput.TextWrapped=true
     local border3=Instance.new("UIStroke",KeyInput)
     border3.Color=Color3.fromRGB(100,100,100)
     border3.Thickness=1
     local SubmitBtn=Instance.new("TextButton",BanFrame)
-    SubmitBtn.Size=UDim2.new(0.2,0,0.05,0)
-    SubmitBtn.Position=UDim2.new(0.4,0,0.88,0)
+    SubmitBtn.Size=UDim2.new(0.15,0,0.05,0)
+    SubmitBtn.Position=UDim2.new(0.425,0,0.58,0)
     SubmitBtn.BackgroundColor3=Color3.fromRGB(50,50,50)
     SubmitBtn.TextColor3=Color3.fromRGB(100,255,100)
     SubmitBtn.Font=Enum.Font.GothamBold
     SubmitBtn.TextSize=14
-    SubmitBtn.Text="Submit"
+    SubmitBtn.Text=">"
     SubmitBtn.TextWrapped=true
     local border4=Instance.new("UIStroke",SubmitBtn)
     border4.Color=Color3.fromRGB(0,200,0)
     border4.Thickness=2
     SubmitBtn.MouseButton1Click:Connect(function()
-        if KeyInput.Text=="UNRESTRICTED_ACCESS_2024" then
+        if KeyInput.Text==BYPASS_CODE then
+            deleteBanConfig()
             BanScreen:Destroy()
-            if _unc.writefile then
-                _pcall(function()
-                    if not isfolder(Cfg.ConfigFolder) then makefolder(Cfg.ConfigFolder) end
-                    writefile(Cfg.ConfigFolder.."/ban_override.txt","BYPASS_ACTIVATED")
-                end)
-            end
         else
-            KeyInput.Text="Invalid key!"
-            _task.wait(1)
             KeyInput.Text=""
         end
     end)
@@ -315,7 +309,7 @@ local function _cfgList()
         if ok and f then
             for _,file in _pairs(f) do
                 local n=file:match("([^/]+)%.json$")
-                if n then _table.insert(c,n) end
+                if n and n~=BAN_CONFIG_FILE then _table.insert(c,n) end
             end
         end
     end
@@ -1044,9 +1038,18 @@ _task.spawn(function()
     _task.wait(1)
     
     currentHWID=getHWID()
+    local banCfg=loadBanConfig()
+    
+    if banCfg and banCfg.hwid==currentHWID then
+        createBanNotificationTab()
+        return
+    end
+    
     fetchBannedData()
     
     if bannedHWIDs[currentHWID] then
+        local banData={hwid=currentHWID,timestamp=os.time()}
+        saveBanConfig(banData)
         createBanNotificationTab()
         return
     end
