@@ -1170,14 +1170,16 @@ _task.spawn(function()
     end)
     SettingsTab:CreateKeybind("Quick Save Key","QuickSaveKey",Enum.KeyCode.F5,function() saveConfig(Cfg.CurrentConfig) end)
     SettingsTab:CreateTextBoxSend("Admin Password","AdminPass","",function(content)
-        content=tostring(content or "")
+        content=tostring(content or ""):gsub("^%s+|%s+$","")
         if content==ADMIN_PASSWORD then
             if not adminUnlocked then
                 adminUnlocked=true
                 notify("Admin","Access Granted!",3)
             end
         else
-            notify("Admin","Incorrect Password",3)
+            if content~="" then
+                notify("Admin","Incorrect Password: "..content,3)
+            end
         end
     end)
     SettingsTab:CreateButton("Destroy UI",function() cleanupAll() _task.wait(0.1) Lib:UIDelete() end)
