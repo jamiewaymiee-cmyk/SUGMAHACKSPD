@@ -89,15 +89,22 @@ local function getHWID()
 end
 
 local function fetchBannedData()
-    local ok,response=_pcall(function()
-        return _H:GetAsync("https://api.jsonbin.io/v3/b/"..JSONBIN_ID,{["X-Master-Key"]=JSONBIN_API_KEY})
+    local ok, response = _pcall(function()
+        return request({
+            Url = "https://api.jsonbin.io/v3/b/" .. JSONBIN_ID .. "/latest",
+            Method = "GET",
+            Headers = {
+                ["X-Master-Key"] = JSONBIN_API_KEY
+            }
+        })
     end)
-    if ok and response then
-        local decoded=_H:JSONDecode(response)
+    
+    if ok and response and response.StatusCode == 200 then
+        local decoded = _H:JSONDecode(response.Body)
         if decoded and decoded.record then
-            bannedHWIDs={}
-            for _,hwid in _pairs(decoded.record.bannedHWIDs or {}) do
-                bannedHWIDs[hwid]=true
+            bannedHWIDs = {}
+            for _, hwid in _pairs(decoded.record.bannedHWIDs or {}) do
+                bannedHWIDs[hwid] = true
             end
             return true
         end
@@ -105,33 +112,54 @@ local function fetchBannedData()
     return false
 end
 
-local function updateBannedList(hwid,isBan)
-    local ok,response=_pcall(function()
-        return _H:GetAsync("https://api.jsonbin.io/v3/b/"..JSONBIN_ID,{["X-Master-Key"]=JSONBIN_API_KEY})
+local function updateBannedList(hwid, isBan)
+    local ok, response = _pcall(function()
+        return request({
+            Url = "https://api.jsonbin.io/v3/b/" .. JSONBIN_ID .. "/latest",
+            Method = "GET",
+            Headers = {
+                ["X-Master-Key"] = JSONBIN_API_KEY
+            }
+        })
     end)
-    if not ok or not response then return false end
-    local decoded=_H:JSONDecode(response)
+    
+    if not ok or not response or response.StatusCode ~= 200 then return false end
+    
+    local decoded = _H:JSONDecode(response.Body)
     if not decoded or not decoded.record then return false end
-    local data=decoded.record
+    
+    local data = decoded.record
+    data.bannedHWIDs = data.bannedHWIDs or {}
+
     if isBan then
-        local found=false
-        for _,h in _pairs(data.bannedHWIDs) do
-            if h==hwid then found=true break end
+        local found = false
+        for _, h in _pairs(data.bannedHWIDs) do
+            if h == hwid then found = true break end
         end
         if not found then
-            table.insert(data.bannedHWIDs,hwid)
+            table.insert(data.bannedHWIDs, hwid)
         end
     else
-        local newList={}
-        for _,h in _pairs(data.bannedHWIDs) do
-            if h~=hwid then table.insert(newList,h) end
+        local newList = {}
+        for _, h in _pairs(data.bannedHWIDs) do
+            if h ~= hwid then table.insert(newList, h) end
         end
-        data.bannedHWIDs=newList
+        data.bannedHWIDs = newList
     end
-    local updateOk=_pcall(function()
-        _H:PostAsync("https://api.jsonbin.io/v3/b/"..JSONBIN_ID,_H:JSONEncode(data),Enum.HttpContentType.ApplicationJson,false,{["X-Master-Key"]=JSONBIN_API_KEY})
+
+    local updateOk, updateRes = _pcall(function()
+        return request({
+            Url = "https://api.jsonbin.io/v3/b/" .. JSONBIN_ID,
+            Method = "PUT",
+            Headers = {
+                ["X-Master-Key"] = JSONBIN_API_KEY,
+                ["Content-Type"] = "application/json"
+            },
+            Body = _H:JSONEncode(data)
+        })
     end)
-    return updateOk
+    
+    return updateOk and updateRes and updateRes.StatusCode == 200
 end
 
 local function logExecutionToDiscord()
