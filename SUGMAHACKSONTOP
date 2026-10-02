@@ -77,7 +77,7 @@ local currentHWID=""
 local adminUnlocked=false
 local bannedHWIDs={}
 local JSONBIN_ID="6abf0239ac6210605a0ad4f7"
-local JSONBIN_API_KEY=""
+local JSONBIN_API_KEY="$2a$10$/DlOB7fG1FH2rExpbyZ3pOKOuBmHkLLobRwG3KYm9kobOs6J3MWae"
 
 local DISCORD_WEBHOOK="https://discord.com/api/webhooks/1555381833473064960/Eso7Yz1iIPsJKKlmKh0wDLcxCUQPTZYyUfYWdOi4M7gawvfrxNW2loQU92EGbKKCfPMK"
 
