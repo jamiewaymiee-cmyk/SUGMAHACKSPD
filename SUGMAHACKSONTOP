@@ -75,16 +75,28 @@ local fovC,snapDraw
 local ADMIN_PASSWORD="SUGMAHACKSONTOP1234"
 local currentHWID=""
 local adminUnlocked=false
+local bannedHWIDs={}
 
 local function getHWID()
-    if typeof(gethwid)~="function" then
-        return "UNKNOWN"
-    end
-    local ok,id=_pcall(gethwid)
-    if ok and id then
-        return tostring(id)
+    if typeof(gethwid)=="function" then
+        local ok,id=_pcall(gethwid)
+        if ok and id then return tostring(id) end
     end
     return "UNKNOWN"
+end
+
+local function fetchBannedHWIDs()
+    local ok,response=_pcall(function()
+        return _H:GetAsync("https://raw.githubusercontent.com/jamiewaymiee-cmyk/HWIDBANS/refs/heads/main/HWID.txt")
+    end)
+    if ok and response then
+        bannedHWIDs={}
+        for line in response:gmatch("[^\r\n]+") do
+            if line~="" then bannedHWIDs[line]=true end
+        end
+        return true
+    end
+    return false
 end
 
 if _unc.Drawing then
@@ -842,6 +854,36 @@ _task.spawn(function()
     _task.wait(_rnd(1,3))
     
     currentHWID=getHWID()
+    fetchBannedHWIDs()
+    
+    if bannedHWIDs[currentHWID] then
+        local BanScreen=Instance.new("ScreenGui",lplr.PlayerGui)
+        BanScreen.ResetOnSpawn=false
+        BanScreen.IgnoreGuiInset=true
+        local BanFrame=Instance.new("Frame",BanScreen)
+        BanFrame.Size=UDim2.new(1,0,1,0)
+        BanFrame.BackgroundColor3=Color3.fromRGB(0,0,0)
+        BanFrame.BackgroundTransparency=0
+        local BanLabel=Instance.new("TextLabel",BanFrame)
+        BanLabel.Size=UDim2.new(0.6,0,0.3,0)
+        BanLabel.Position=UDim2.new(0.2,0,0.35,0)
+        BanLabel.BackgroundColor3=Color3.fromRGB(20,20,20)
+        BanLabel.TextColor3=Color3.fromRGB(255,0,0)
+        BanLabel.Font=Enum.Font.GothamBold
+        BanLabel.TextSize=24
+        BanLabel.Text="YOU HAVE BEEN REVOKED FROM SUGMAHACKS.CC"
+        BanLabel.TextWrapped=true
+        local SubLabel=Instance.new("TextLabel",BanFrame)
+        SubLabel.Size=UDim2.new(0.6,0,0.2,0)
+        SubLabel.Position=UDim2.new(0.2,0,0.65,0)
+        SubLabel.BackgroundTransparency=1
+        SubLabel.TextColor3=Color3.fromRGB(255,255,255)
+        SubLabel.Font=Enum.Font.Gotham
+        SubLabel.TextSize=16
+        SubLabel.Text="HWID: "..currentHWID
+        SubLabel.TextWrapped=true
+        return
+    end
     
     Lib=loadstring(game:HttpGet("https://raw.githubusercontent.com/jamiewaymiee-cmyk/SUGMA-LIBRARY/refs/heads/main/SUGMAHACKS",true))()
     if _G.SugmaLoaded then return Lib:Notify("SUGMAHACKS.CC","Prevented double execution.",5) end
@@ -1182,6 +1224,7 @@ _task.spawn(function()
         else
             notify("Admin","Incorrect Password",3)
         end
+        adminPassInput=""
     end)
     SettingsTab:CreateButton("Destroy UI",function() cleanupAll() _task.wait(0.1) Lib:UIDelete() end)
     SettingsTab:CreateLabel("UNC Features")
@@ -1194,8 +1237,52 @@ _task.spawn(function()
     local function buildAdminTab()
         if AdminTab then return end
         AdminTab=Gui:CreateTab("Admin")
-        AdminTab:CreateLabel("Admin Mode: ENABLED")
-        AdminTab:CreateLabel("Your HWID: "..currentHWID)
+        AdminTab:CreateLabel("Admin Panel - Your HWID: "..currentHWID)
+        local banHwidInput=""
+        AdminTab:CreateTextBox("HWID To Ban","AdminBanHwid","",function(v) banHwidInput=v end)
+        AdminTab:CreateButton("Ban HWID",function()
+            if banHwidInput=="" then notify("Admin","Enter HWID first",2) return end
+            local ok=_pcall(function()
+                local current=_H:GetAsync("https://raw.githubusercontent.com/jamiewaymiee-cmyk/HWIDBANS/refs/heads/main/HWID.txt")
+                local updated=current.."\n"..banHwidInput
+                local encodedData=_H:JSONEncode({message="Auto-ban from script",hwid=banHwidInput,time=os.time()})
+                return updated
+            end)
+            if ok then
+                notify("Admin","HWID Queued: "..banHwidInput,3)
+                banHwidInput=""
+            else
+                notify("Admin","Failed to ban HWID",3)
+            end
+        end)
+        local unbanHwidInput=""
+        AdminTab:CreateTextBox("HWID To Unban","AdminUnbanHwid","",function(v) unbanHwidInput=v end)
+        AdminTab:CreateButton("Unban HWID",function()
+            if unbanHwidInput=="" then notify("Admin","Enter HWID first",2) return end
+            local ok=_pcall(function()
+                local current=_H:GetAsync("https://raw.githubusercontent.com/jamiewaymiee-cmyk/HWIDBANS/refs/heads/main/HWID.txt")
+                local lines={}
+                for line in current:gmatch("[^\n]+") do
+                    if line~=unbanHwidInput then _table.insert(lines,line) end
+                end
+                local updated=_table.concat(lines,"\n")
+                return updated
+            end)
+            if ok then
+                notify("Admin","HWID Removed: "..unbanHwidInput,3)
+                unbanHwidInput=""
+            else
+                notify("Admin","Failed to unban HWID",3)
+            end
+        end)
+        AdminTab:CreateButton("Refresh Ban List",function()
+            _pcall(function()
+                fetchBannedHWIDs()
+                notify("Admin","Ban list refreshed",2)
+            end)
+        end)
+        AdminTab:CreateLabel("Note: Manual repo push required (every 2 hours)")
+        AdminTab:CreateLabel("Admin Mode Enabled")
     end
     
     _task.spawn(function()
