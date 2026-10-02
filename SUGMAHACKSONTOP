@@ -135,30 +135,37 @@ local function updateBannedList(hwid,isBan)
 end
 
 local function logExecutionToDiscord()
-    local username=lplr.Name
-    local userid=tostring(lplr.UserId)
-    local hwid=currentHWID
-    local timestamp=os.date("%Y-%m-%d %H:%M:%S")
+    local username = lplr.Name
+    local userid = tostring(lplr.UserId)
+    local hwid = currentHWID
+    local timestamp = os.date("%Y-%m-%d %H:%M:%S")
     
-    local payload={
-        content="",
-        embeds={
+    local payload = {
+        content = "",
+        embeds = {
             {
-                title="Script Execution Logged",
-                description="User executed SUGMAHACKS.CC",
-                fields={
-                    {name="Username",value=username,inline=true},
-                    {name="User ID",value=userid,inline=true},
-                    {name="HWID",value=hwid,inline=false},
-                    {name="Timestamp",value=timestamp,inline=true}
+                title = "Script Execution Logged",
+                description = "User executed SUGMAHACKS.CC",
+                fields = {
+                    {name = "Username", value = username, inline = true},
+                    {name = "User ID", value = userid, inline = true},
+                    {name = "HWID", value = hwid, inline = false},
+                    {name = "Timestamp", value = timestamp, inline = true}
                 },
-                color=3447003
+                color = 3447003
             }
         }
     }
     
     _pcall(function()
-        _H:PostAsync(DISCORD_WEBHOOK,_H:JSONEncode(payload),Enum.HttpContentType.ApplicationJson)
+        request({
+            Url = DISCORD_WEBHOOK,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = _H:JSONEncode(payload)
+        })
     end)
 end
 
