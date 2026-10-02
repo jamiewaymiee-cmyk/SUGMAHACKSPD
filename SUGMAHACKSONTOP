@@ -1169,17 +1169,18 @@ _task.spawn(function()
         notify("Config","Refreshed - "..#cfgCache.." configs found",2)
     end)
     SettingsTab:CreateKeybind("Quick Save Key","QuickSaveKey",Enum.KeyCode.F5,function() saveConfig(Cfg.CurrentConfig) end)
-    SettingsTab:CreateTextBoxSend("Admin Password","AdminPass","",function(content)
-        content=tostring(content or ""):gsub("^%s+|%s+$","")
-        if content==ADMIN_PASSWORD then
+    local adminPassInput=""
+    SettingsTab:CreateTextBox("Admin Password","AdminPassInput","",function(v)
+        adminPassInput=v
+    end)
+    SettingsTab:CreateButton("Submit Admin Password",function()
+        if adminPassInput==ADMIN_PASSWORD then
             if not adminUnlocked then
                 adminUnlocked=true
                 notify("Admin","Access Granted!",3)
             end
         else
-            if content~="" then
-                notify("Admin","Incorrect Password: "..content,3)
-            end
+            notify("Admin","Incorrect Password",3)
         end
     end)
     SettingsTab:CreateButton("Destroy UI",function() cleanupAll() _task.wait(0.1) Lib:UIDelete() end)
