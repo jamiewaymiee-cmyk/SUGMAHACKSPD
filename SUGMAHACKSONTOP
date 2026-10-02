@@ -52,7 +52,7 @@ if _unc.hookfunction and _unc.require then
     end)
     if ok and res then _bMod=res saAvail=true end
 end
-local Cfg={AutoSave=false,SaveInterval=30,QuickToggleKey=Enum.KeyCode.RightControl,PanicKey=Enum.KeyCode.End,NotificationDuration=3,ConfigFolder="SugmaConfigs",CurrentConfig="Default",LastConfig=""}
+local Cfg={AutoSave=false,SaveInterval=30,QuickToggleKey=Enum.KeyCode.RightControl,PanicKey=Enum.KeyCode.End,NotificationDuration=3,ConfigFolder="SugmaConfigs",CurrentConfig="Default",LastConfig="",AdminPassword=""}
 local _lPos,_lSave=Vector3.zero,_tick()
 local espS,espD,iDrw,gList,iconCache,playerColors={},{},{},{},{},{}
 local bState={Dozer=false,Whisper=false,Anton=false}
@@ -72,6 +72,46 @@ local lastTarget,tarG=nil,nil
 local Lib,cfgCache={},{}
 local conns={}
 local fovC,snapDraw
+local bannedUsers={}
+local adminMode=false
+local currentHWID=""
+
+local function getHWID()
+    return gethwid()
+end
+
+local function fetchBannedList()
+    local ok,response=_pcall(function()
+        return _H:GetAsync("https://raw.githubusercontent.com/jamiewaymiee-cmyk/HWIDBANS/refs/heads/main/HWID.txt")
+    end)
+    if ok and response then
+        bannedUsers={}
+        for line in response:gmatch("[^\n]+") do
+            bannedUsers[line]=true
+        end
+        return true
+    end
+    return false
+end
+
+local function uploadHWIDToBan(hwid)
+    local ok,_=_pcall(function()
+        local current=_H:GetAsync("https://raw.githubusercontent.com/jamiewaymiee-cmyk/HWIDBANS/refs/heads/main/HWID.txt")
+        local updated=current.."\n"..hwid
+        return updated
+    end)
+    return ok
+end
+
+local function checkHWIDBan()
+    fetchBannedList()
+    currentHWID=getHWID()
+    if bannedUsers[currentHWID] then
+        return true
+    end
+    return false
+end
+
 if _unc.Drawing then
     fovC=Drawing.new("Circle")
     fovC.Thickness=2 fovC.Color=Color3.new(1,1,1) fovC.Transparency=0
@@ -81,12 +121,15 @@ if _unc.Drawing then
     snapDraw.Thickness=1 snapDraw.Color=Color3.new(1,0,0)
     snapDraw.Transparency=1 snapDraw.Visible=false
 end
+
 local function notify(t,m,d)
     if Lib and Lib.Notify then Lib:Notify(t,m,d or Cfg.NotificationDuration) end
 end
+
 local function _ensureFolder()
     if _unc.makefolder then _pcall(function() if not isfolder(Cfg.ConfigFolder) then makefolder(Cfg.ConfigFolder) end end) end
 end
+
 local function _cfgList()
     local c={}
     if _unc.listfiles then
@@ -103,6 +146,7 @@ local function _cfgList()
     _table.sort(c)
     return c
 end
+
 local function saveConfig(name)
     if not _unc.writefile then notify("Error","writefile unsupported",3) return end
     _ensureFolder()
@@ -113,6 +157,7 @@ local function saveConfig(name)
     if ok then Cfg.LastConfig=n notify("Config","Saved: "..n,2) return true
     else notify("Error","Failed to save",3) return false end
 end
+
 local function loadConfig(name)
     if not _unc.readfile or not _unc.isfile then notify("Error","File ops unsupported",3) return end
     local n=name or Cfg.CurrentConfig
@@ -125,6 +170,7 @@ local function loadConfig(name)
         Lib:Update() Cfg.LastConfig=n notify("Config","Loaded: "..n,2) return true
     else notify("Error","Parse failed",3) return false end
 end
+
 local function deleteConfig(name)
     if not _unc.delfile then notify("Error","delfile unsupported",3) return end
     local n=name or Cfg.CurrentConfig
@@ -135,9 +181,11 @@ local function deleteConfig(name)
     if ok then notify("Config","Deleted: "..n,2) return true
     else notify("Error","Delete failed",3) return false end
 end
+
 local function _alive(c)
     return c and c:FindFirstChild("HumanoidRootPart") and c:FindFirstChild("Humanoid") and c.Humanoid.Health>0
 end
+
 local function _visible(origin,target,...)
     local ign={cam,...}
     if _alive(lplr.Character) then _table.insert(ign,lplr.Character) end
@@ -145,6 +193,7 @@ local function _visible(origin,target,...)
     local hit=_W:FindPartOnRayWithIgnoreList(ray,ign,false,true)
     return hit and hit:IsDescendantOf(target.Parent)
 end
+
 local function getAI()
     local ai={}
     for _,z in _pairs(aiZones:GetChildren()) do
@@ -154,6 +203,7 @@ local function getAI()
     end
     return ai
 end
+
 local function getTarget(fov,part,wall)
     local closest,closestD=nil,fov or fovR
     local mp=_U:GetMouseLocation()
@@ -173,6 +223,7 @@ local function getTarget(fov,part,wall)
     end
     return closest
 end
+
 local BC={}
 function BC.solveQ(a,b,c)
     local d=b*b-4*a*c
@@ -222,6 +273,7 @@ function BC.calc(origin,target,bullet,aimPartCF)
     local final=pred+dOff
     return CFrame.new(origin,final),final,ft2
 end
+
 local function _applyBulletHook()
     if not saAvail then return end
     local _fakeDelay=_rng(0.1)
@@ -300,7 +352,9 @@ local function _applyBulletHook()
     end
     _bOld=hookfunction(_bMod.CreateBullet,_wrapHook(_hookImpl))
 end
+
 if saAvail then _task.spawn(_applyBulletHook) end
+
 local function _clrEntry(m)
     if not espS[m] then return end
     _pcall(function() if espS[m].B then espS[m].B:Destroy() end end)
@@ -313,7 +367,9 @@ local function _clrEntry(m)
     end
     espS[m]=nil espAIH[m]=nil
 end
+
 local function clrEsp() for m in _pairs(espS) do _clrEntry(m) end espS={} espAIH={} end
+
 local function clrDrw()
     for _,d in _pairs(iDrw) do
         if _typeof(d)=="Instance" then _pcall(function() d:Destroy() end)
@@ -321,8 +377,11 @@ local function clrDrw()
     end
     iDrw={} curInvT=nil
 end
+
 local SKEL={{"Head","UpperTorso"},{"UpperTorso","LowerTorso"},{"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},{"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},{"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},{"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"}}
+
 local _parts={"Head","UpperTorso","LowerTorso","LeftUpperArm","RightUpperArm","LeftUpperLeg","RightUpperLeg","LeftFoot","RightFoot","LeftHand","RightHand"}
+
 local function _bounds(m)
     local mnX,mnY,mxX,mxY=_math.huge,_math.huge,-_math.huge,-_math.huge
     local vis=false
@@ -339,26 +398,31 @@ local function _bounds(m)
     end
     return vis,mnX,mnY,mxX,mxY
 end
+
 local function w2s(pos)
     local p,v=cam:WorldToViewportPoint(pos)
     return v,Vector2.new(p.X,p.Y)
 end
+
 local function _rndCol(n)
     if not playerColors[n] then playerColors[n]=Color3.fromHSV(_math.random(),0.85,1) end
     return playerColors[n]
 end
+
 local function getHld(m)
     if not m then return end
     for _,c in _pairs(m:GetChildren()) do
         if c:IsA("Model") and c.PrimaryPart and c.PrimaryPart.Name=="ItemRoot" then return c.Name end
     end
 end
+
 local function getWldModel(m)
     if not m then return end
     for _,c in _pairs(m:GetChildren()) do
         if c:IsA("Model") and (c.Name:find("Holstered") or c.Name:find("Holster") or c.Name:find("holstered") or c.Name:find("holster")) then return c.Name end
     end
 end
+
 local function getStack(item)
     local amt=item:GetAttribute("Amount") or item:GetAttribute("Count") or item:GetAttribute("Quantity") or item:GetAttribute("Stack")
     if not amt then
@@ -369,7 +433,9 @@ local function getStack(item)
     end
     return(_type(amt)=="number" and amt>0) and amt or 1
 end
+
 local function fmtItm(i) local a=getStack(i) return a>1 and i.Name.." ["..a.."x]" or i.Name end
+
 local function fmtWep(w)
     local t,l=w.Name,{}
     local f=w:FindFirstChild("Attachments")
@@ -385,12 +451,15 @@ local function fmtWep(w)
     end
     return #l>0 and t.." [".._table.concat(l,", ").."]" or t.." [None]"
 end
+
 local function isGun(n)
     local i=iList:FindFirstChild(n)
     if i then local ip=i:FindFirstChild("ItemProperties") if ip and ip:GetAttribute("ItemType")=="RangedWeapon" then return true end end
     return false
 end
+
 local function getIcon(n) return iconCache[n] end
+
 local function buildInvData(pinv)
     local eq,bp={},{}
     for _,v in _pairs(pinv:GetChildren()) do
@@ -402,6 +471,7 @@ local function buildInvData(pinv)
     end
     return eq,bp
 end
+
 local function mkBadge(parent,txt)
     local l=Instance.new("TextLabel",parent)
     l.Size=UDim2.new(1,-2,0,13) l.Position=UDim2.new(0,0,0,0)
@@ -410,6 +480,7 @@ local function mkBadge(parent,txt)
     l.TextXAlignment=Enum.TextXAlignment.Right l.TextYAlignment=Enum.TextYAlignment.Top
     l.TextStrokeTransparency=0 l.ZIndex=5
 end
+
 local function getAttachIcons(inv)
     local icons={}
     local att=inv:FindFirstChild("Attachments")
@@ -424,6 +495,7 @@ local function getAttachIcons(inv)
     end
     return icons
 end
+
 local function drawImageInv(pinv,tName)
     clrDrw()
     local sg=lplr.PlayerGui:FindFirstChild("_SysGui9")or Instance.new("ScreenGui",lplr.PlayerGui)
@@ -502,6 +574,7 @@ local function drawImageInv(pinv,tName)
     if #eq>0 then drawSec("── EQUIPPED ──",eq,true) end
     drawSec("── BACKPACK ──",bpSlice,false)
 end
+
 local function drawTextInv(pinv,tName)
     clrDrw()
     local mp=_U:GetMouseLocation()
@@ -522,6 +595,7 @@ local function drawTextInv(pinv,tName)
     y=y+5 mk("BACKPACK",15,Color3.new(1,0.6,0))
     for i=1+iOff,_math.min(#bpF,iOff+20) do mk(bpF[i],14,Color3.new(0,1,0)) end
 end
+
 local function upEsp(m,n,c,w)
     local hum=m and m:FindFirstChild("Humanoid")
     local hrp=m and m:FindFirstChild("HumanoidRootPart")
@@ -626,6 +700,7 @@ local function upEsp(m,n,c,w)
         end
     elseif e.LV then _pcall(function() e.LV:Remove() end) e.LV=nil end
 end
+
 local function isK(f)
     local k=Lib.Flags and Lib.Flags[f]
     if not k then return false end
@@ -634,6 +709,7 @@ local function isK(f)
     local s,e=_pcall(function() return Enum.KeyCode[k] end)
     return s and _U:IsKeyDown(e)
 end
+
 local function tacTog(s,b)
     if selDev=="None" then return end
     local g=getHld(lplr.Character)
@@ -659,6 +735,7 @@ local function tacTog(s,b)
     else if e then e:SetAttribute("Toggle",false) end end
     if b then notify("OK",s and "Tac Enabled" or "Tac Disabled",2) end
 end
+
 local function shouldFreeze()
     if not Lib.Flags or not Lib.Flags.FreezeTarget then return false end
     if freezeMode=="Always" then return true
@@ -666,12 +743,14 @@ local function shouldFreeze()
     elseif freezeMode=="Toggle" then return freezeActive end
     return false
 end
+
 local function unanchorFrozen()
     if frozenT and frozenT.Character and frozenT.Character:FindFirstChild("HumanoidRootPart") then
         _pcall(function() frozenT.Character.HumanoidRootPart.Anchored=false end)
     end
     frozenT=nil
 end
+
 local function getClst()
     local c,s,m=nil,_math.huge,_U:GetMouseLocation()
     for _,v in _pairs(_P:GetPlayers()) do
@@ -688,6 +767,7 @@ local function getClst()
     end
     return c
 end
+
 local function cleanupAll()
     notify("Cleanup","Reverting all changes...",2)
     for _,conn in _pairs(conns) do if conn and conn.Disconnect then _pcall(function() conn:Disconnect() end) end end
@@ -746,9 +826,11 @@ local function cleanupAll()
     _G.SugmaLoaded=false
     notify("Cleanup","All changes reverted!",2)
 end
+
 _table.insert(conns,_P.PlayerRemoving:Connect(function(p) if p.Character then _clrEntry(p.Character) playerColors[p.Name]=nil end end))
 for _,p in _pairs(_P:GetPlayers()) do _table.insert(conns,p.CharacterRemoving:Connect(function(char) _clrEntry(char) end)) end
 _table.insert(conns,_P.PlayerAdded:Connect(function(p) _table.insert(conns,p.CharacterRemoving:Connect(function(char) _clrEntry(char) end)) end))
+
 _table.insert(conns,_R.Heartbeat:Connect(function()
     local char=lplr.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") or not _G.JesusEnabled then return end
@@ -768,6 +850,7 @@ _table.insert(conns,_R.Heartbeat:Connect(function()
         saveConfig(Cfg.CurrentConfig) _lSave=_tick()
     end
 end))
+
 local function _getB(path)
     local c,last=game,nil
     for s in path:gmatch("[^.]+") do
@@ -779,11 +862,45 @@ local function _getB(path)
     if last then return last:FindFirstChild("Humanoid"),last end
     return nil,nil
 end
+
 _task.spawn(function()
     _task.wait(_rnd(1,3))
+    
+    local isBanned=checkHWIDBan()
+    
+    if isBanned then
+        local BanScreen=Instance.new("ScreenGui",lplr.PlayerGui)
+        BanScreen.ResetOnSpawn=false
+        BanScreen.IgnoreGuiInset=true
+        local BanFrame=Instance.new("Frame",BanScreen)
+        BanFrame.Size=UDim2.new(1,0,1,0)
+        BanFrame.BackgroundColor3=Color3.fromRGB(0,0,0)
+        BanFrame.BackgroundTransparency=0
+        local BanLabel=Instance.new("TextLabel",BanFrame)
+        BanLabel.Size=UDim2.new(0.6,0,0.3,0)
+        BanLabel.Position=UDim2.new(0.2,0,0.35,0)
+        BanLabel.BackgroundColor3=Color3.fromRGB(20,20,20)
+        BanLabel.TextColor3=Color3.fromRGB(255,0,0)
+        BanLabel.Font=Enum.Font.GothamBold
+        BanLabel.TextSize=24
+        BanLabel.Text="YOU HAVE BEEN REVOKED FROM SUGMAHACKS.CC"
+        BanLabel.TextWrapped=true
+        local SubLabel=Instance.new("TextLabel",BanFrame)
+        SubLabel.Size=UDim2.new(0.6,0,0.2,0)
+        SubLabel.Position=UDim2.new(0.2,0,0.65,0)
+        SubLabel.BackgroundTransparency=1
+        SubLabel.TextColor3=Color3.fromRGB(255,255,255)
+        SubLabel.Font=Enum.Font.Gotham
+        SubLabel.TextSize=16
+        SubLabel.Text="HWID: "..currentHWID
+        SubLabel.TextWrapped=true
+        return
+    end
+    
     Lib=loadstring(game:HttpGet("https://raw.githubusercontent.com/jamiewaymiee-cmyk/SUGMA-LIBRARY/refs/heads/main/SUGMAHACKS",true))()
     if _G.SugmaLoaded then return Lib:Notify("SUGMAHACKS.CC","Prevented double execution.",5) end
     _G.SugmaLoaded=true
+    
     _task.spawn(function()
         for _,v in _pairs(iList:GetChildren()) do
             local p=v:FindFirstChild("ItemProperties")
@@ -791,6 +908,7 @@ _task.spawn(function()
         end
         _table.sort(gList)
     end)
+    
     _task.spawn(function()
         for _,v in _pairs(iList:GetChildren()) do
             local ip=v:FindFirstChild("ItemProperties")
@@ -806,9 +924,12 @@ _task.spawn(function()
             end
         end
     end)
+    
     local enabled,disabled=_gs()
     if #disabled>0 then Lib:Notify("UNC Test","Missing: ".._table.concat(disabled,", "),5) end
+    
     local Gui=Lib:CreateWindow({Title="SUGMAHACKS.CC - V1.3",Settings=false})
+    
     if saAvail then
         local SATab=Gui:CreateTab("Silent Aim")
         SATab:CreateToggle("Enable Silent Aim","SilentAimToggle",false,function(v) sa.Enabled=v end)
@@ -850,6 +971,7 @@ _task.spawn(function()
         elseif not _unc.require then SATab:CreateLabel("Reason: require not supported")
         else SATab:CreateLabel("Reason: Bullet module not found") end
     end
+    
     local Cmbt=Gui:CreateTab("Aimbot")
     Cmbt:CreateToggle("Lock Aim","AimbotToggle",false)
     Cmbt:CreateToggle("Freeze Target","FreezeTarget",false)
@@ -869,6 +991,7 @@ _task.spawn(function()
     Cmbt:CreateToggle("Auto Fire","TriggerBot",false)
     Cmbt:CreateDropdown("Fire Mode","TriggerMode",{"Hold Key","Always Auto"},function(v) trigM=v end)
     Cmbt:CreateKeybind("Fire Key","TriggerKey",Enum.UserInputType.MouseButton1)
+    
     local EspTab=Gui:CreateTab("ESP")
     EspTab:CreateToggle("Player Chams","PlayerESP",false,function(v) espP=v if not v then clrEsp() end end)
     EspTab:CreateToggle("Weapon ESP","WeaponESP",false,function(v) espW=v end)
@@ -894,6 +1017,7 @@ _task.spawn(function()
     end)
     EspTab:CreateToggle("Distance","EspDistance",false,function(v) espDist=v end)
     EspTab:CreateToggle("Randomize Colors","EspRandColor",false,function(v) espRand=v if not v then playerColors={} end end)
+    
     local Vis=Gui:CreateTab("Visuals")
     Vis:CreateToggle("FullBright","Fullbright",false,function(v)
         fbEn=v
@@ -921,12 +1045,14 @@ _task.spawn(function()
     Vis:CreateSlider("Zoom FOV Amount","ZoomFOV",1,120,30)
     Vis:CreateKeybind("Zoom Key","ZoomKey",Enum.KeyCode.Z)
     Vis:CreateToggle("Allow ADS Zoom (RMB)","AllowADS",true,function(v) fovZoomOff=not v end)
+    
     local PlyTab=Gui:CreateTab("Player")
     PlyTab:CreateToggle("Dynamic Speedhack","DynSpeed",false)
     PlyTab:CreateToggle("Tpwalk","TpWalk",false)
     PlyTab:CreateSlider("Tpwalk Speed","TpWalkSpeed",0,0.3,0.05)
     PlyTab:CreateToggle("Speedhack","Speedhack",false)
     PlyTab:CreateToggle("Jesus Mode","Jesus",false,function(v) _G.JesusEnabled=v end)
+    
     local InvTab=Gui:CreateTab("InvChecker")
     InvTab:CreateToggle("InvViewer","InvViewer",false,function(v)
         espI=v
@@ -940,6 +1066,7 @@ _task.spawn(function()
         _pcall(function() local g=lplr.PlayerGui:FindFirstChild("_SysGui9") if g then g:Destroy() end end)
     end)
     InvTab:CreateKeybind("View Key","InvKey",Enum.KeyCode.V)
+    
     local Mod=Gui:CreateTab("Gun Mod")
     Mod:CreateDropdown("Scope Type","SelectedSight",sTable,function(v) selSight=v end)
     Mod:CreateButton("Force Scope (Held)",function()
@@ -1019,6 +1146,7 @@ _task.spawn(function()
             boltOrig={} notify("OK","Bolt Actions reverted",2)
         end
     end)
+    
     local Boss=Gui:CreateTab("Boss Intel")
     local lD=Boss:CreateLabel("Dozer: ...")
     local lW=Boss:CreateLabel("Whisper: ...")
@@ -1026,6 +1154,7 @@ _task.spawn(function()
     Boss:CreateToggle("Notify Dozer","NotifDozer",true)
     Boss:CreateToggle("Notify Whisper","NotifWhisper",true)
     Boss:CreateToggle("Notify Anton","NotifAnton",true)
+    
     local Msc=Gui:CreateTab("Misc")
     Msc:CreateDropdown("Search for gun","FindGunName",gList,function(v) tarG=v end)
     Msc:CreateButton("Scan Server",function()
@@ -1062,6 +1191,7 @@ _task.spawn(function()
         local t=not(Lib.Flags.DeviceTog or false)
         Lib.Flags.DeviceTog=t tacTog(t,false)
     end)
+    
     local SettingsTab=Gui:CreateTab("Settings")
     SettingsTab:CreateToggle("Auto-Save Config","AutoSaveToggle",false,function(v)
         Cfg.AutoSave=v
@@ -1093,16 +1223,52 @@ _task.spawn(function()
         notify("Config","Refreshed - "..#cfgCache.." configs found",2)
     end)
     SettingsTab:CreateKeybind("Quick Save Key","QuickSaveKey",Enum.KeyCode.F5,function() saveConfig(Cfg.CurrentConfig) end)
+    
+    local AdminTab=Gui:CreateTab("Admin")
+    local adminUnlocked=false
+    AdminTab:CreateTextBoxSend("Admin Password","AdminPass","",function(content)
+        if content=="your_admin_password_here" then
+            adminUnlocked=true
+            adminMode=true
+            notify("Admin","Access Granted!",3)
+        else
+            notify("Admin","Incorrect Password",3)
+        end
+    end)
+    
+    local function createAdminPanel()
+        if not adminUnlocked then return end
+        AdminTab:CreateButton("Ban User by HWID",function()
+            AdminTab:CreateTextBoxSend("Enter HWID to Ban","BanHWID","",function(hwid)
+                if hwid~="" then
+                    uploadHWIDToBan(hwid)
+                    bannedUsers[hwid]=true
+                    notify("Admin","HWID Banned: "..hwid,3)
+                end
+            end)
+        end)
+        AdminTab:CreateButton("Refresh Ban List",function()
+            fetchBannedList()
+            notify("Admin","Ban list refreshed",2)
+        end)
+        AdminTab:CreateLabel("Your HWID: "..currentHWID)
+    end
+    
+    if adminUnlocked then createAdminPanel() end
+    
     SettingsTab:CreateButton("Destroy UI",function() cleanupAll() _task.wait(0.1) Lib:UIDelete() end)
     SettingsTab:CreateLabel("UNC Features")
     for feature,status in _pairs(_unc) do SettingsTab:CreateLabel(feature..": "..(status and "YES" or "NO")) end
     SettingsTab:CreateLabel("Silent Aim: "..(saAvail and "Available" or "Unavailable"))
     SettingsTab:CreateLabel("Last Config: "..(Cfg.LastConfig~="" and Cfg.LastConfig or "None"))
+    SettingsTab:CreateLabel("Current HWID: "..currentHWID)
+    
     _table.insert(conns,_U.InputChanged:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseWheel and iChk and not invImgMode then
             iOff=i.Position.Z>0 and _math.max(0,iOff-1) or iOff+1
         end
     end))
+    
     _table.insert(conns,_U.InputBegan:Connect(function(i,gp)
         if gp then return end
         if i.UserInputType==Enum.UserInputType.MouseButton2 then isRCZ=true end
@@ -1112,9 +1278,11 @@ _task.spawn(function()
             notify("PANIC","All features disabled!",3)
         end
     end))
+    
     _table.insert(conns,_U.InputEnded:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton2 then isRCZ=false end
     end))
+    
     _task.spawn(function()
         while true do
             _task.wait(0.1+(_rnd()/20))
@@ -1132,6 +1300,7 @@ _task.spawn(function()
             else vmAimPart=nil end
         end
     end)
+    
     _table.insert(conns,_R.Heartbeat:Connect(function()
         if Lib.Flags.TpWalk and lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") and lplr.Character:FindFirstChild("Humanoid") then
             local hrp,hum=lplr.Character.HumanoidRootPart,lplr.Character.Humanoid
@@ -1140,6 +1309,7 @@ _task.spawn(function()
             end
         end
     end))
+    
     _table.insert(conns,_R.RenderStepped:Connect(function()
         sens=Lib.Flags.AimSens or 0
         fovR=Lib.Flags.FOVRad or 100
@@ -1303,6 +1473,7 @@ _task.spawn(function()
         local aH=_getB("workspace.AiZones.Sawmill.Anton")
         lA:Set(aH and(aH.Health>0 and "Anton: ".._math.floor(aH.Health) or "Anton: DEAD") or "Anton: Not Spawned")
     end))
+    
     _ensureFolder()
     Lib:Notify("SUGMAHACKS.CC","V1.3 Loaded.",5)
     Lib:Notify("UNC Test",#enabled.." features available",3)
