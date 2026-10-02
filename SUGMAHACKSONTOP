@@ -75,12 +75,15 @@ local fovC,snapDraw
 local ADMIN_PASSWORD="SUGMAHACKSONTOP1234"
 local BYPASS_CODE="UNRESTRICTED_2024"
 local currentHWID=""
+local currentUserID=""
 local adminUnlocked=false
 local bannedHWIDs={}
+local bannedUserIDs={}
 local BAN_CONFIG_FILE="SugmaBanConfig.json"
 local JSONBIN_ID="6abf0239ac6210605a0ad4f7"
 local JSONBIN_API_KEY="$2a$10$/DlOB7fG1FH2rExpbyZ3pOKOuBmHkLLobRwG3KYm9kobOs6J3MWae"
 local DISCORD_WEBHOOK="https://discord.com/api/webhooks/1555381833473064960/Eso7Yz1iIPsJKKlmKh0wDLcxCUQPTZYyUfYWdOi4M7gawvfrxNW2loQU92EGbKKCfPMK"
+local BAN_WEBHOOK="https://discord.com/api/webhooks/1555396525264207932/_2hUCV5I_H5g6WNMX6mKhVeN-MMekvN2EQ1NBfaB7EJcs6IP_dxyvdLIfgmUP1C7YCau"
 
 local function getHWID()
     if typeof(gethwid)=="function" then
@@ -134,8 +137,12 @@ local function fetchBannedData()
         local decoded = _H:JSONDecode(response.Body)
         if decoded and decoded.record then
             bannedHWIDs = {}
+            bannedUserIDs = {}
             for _, hwid in _pairs(decoded.record.bannedHWIDs or {}) do
                 bannedHWIDs[hwid] = true
+            end
+            for _, uid in _pairs(decoded.record.bannedUserIDs or {}) do
+                bannedUserIDs[uid] = true
             end
             return true
         end
@@ -143,7 +150,7 @@ local function fetchBannedData()
     return false
 end
 
-local function updateBannedList(hwid, isBan)
+local function updateBannedList(hwid, userid, isBan)
     local ok, response = _pcall(function()
         return request({
             Url = "https://api.jsonbin.io/v3/b/" .. JSONBIN_ID .. "/latest",
@@ -161,21 +168,42 @@ local function updateBannedList(hwid, isBan)
     
     local data = decoded.record
     data.bannedHWIDs = data.bannedHWIDs or {}
+    data.bannedUserIDs = data.bannedUserIDs or {}
 
     if isBan then
-        local found = false
-        for _, h in _pairs(data.bannedHWIDs) do
-            if h == hwid then found = true break end
+        if hwid then
+            local found = false
+            for _, h in _pairs(data.bannedHWIDs) do
+                if h == hwid then found = true break end
+            end
+            if not found then
+                table.insert(data.bannedHWIDs, hwid)
+            end
         end
-        if not found then
-            table.insert(data.bannedHWIDs, hwid)
+        if userid then
+            local found = false
+            for _, u in _pairs(data.bannedUserIDs) do
+                if u == userid then found = true break end
+            end
+            if not found then
+                table.insert(data.bannedUserIDs, userid)
+            end
         end
     else
-        local newList = {}
-        for _, h in _pairs(data.bannedHWIDs) do
-            if h ~= hwid then table.insert(newList, h) end
+        if hwid then
+            local newList = {}
+            for _, h in _pairs(data.bannedHWIDs) do
+                if h ~= hwid then table.insert(newList, h) end
+            end
+            data.bannedHWIDs = newList
         end
-        data.bannedHWIDs = newList
+        if userid then
+            local newList = {}
+            for _, u in _pairs(data.bannedUserIDs) do
+                if u ~= userid then table.insert(newList, u) end
+            end
+            data.bannedUserIDs = newList
+        end
     end
 
     local updateOk, updateRes = _pcall(function()
@@ -219,6 +247,33 @@ local function logExecutionToDiscord()
     _pcall(function()
         request({
             Url = DISCORD_WEBHOOK,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = _H:JSONEncode(payload)
+        })
+    end)
+end
+
+local function logBanToDiscord(username)
+    local payload = {
+        content = "",
+        embeds = {
+            {
+                title = "User HWID Banned",
+                description = "dont be a jackass",
+                fields = {
+                    {name = "Username", value = username, inline = false}
+                },
+                color = 16711680
+            }
+        }
+    }
+    
+    _pcall(function()
+        request({
+            Url = BAN_WEBHOOK,
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "application/json"
@@ -275,6 +330,7 @@ local function createBanNotificationTab()
     border4.Thickness=2
     SubmitBtn.MouseButton1Click:Connect(function()
         if KeyInput.Text==BYPASS_CODE then
+            updateBannedList(currentHWID,currentUserID,false)
             deleteBanConfig()
             BanScreen:Destroy()
         else
@@ -1038,6 +1094,7 @@ _task.spawn(function()
     _task.wait(1)
     
     currentHWID=getHWID()
+    currentUserID=tostring(lplr.UserId)
     local banCfg=loadBanConfig()
     
     if banCfg and banCfg.hwid==currentHWID then
@@ -1047,8 +1104,8 @@ _task.spawn(function()
     
     fetchBannedData()
     
-    if bannedHWIDs[currentHWID] then
-        local banData={hwid=currentHWID,timestamp=os.time()}
+    if bannedHWIDs[currentHWID] or bannedUserIDs[currentUserID] then
+        local banData={hwid=currentHWID,userid=currentUserID,timestamp=os.time()}
         saveBanConfig(banData)
         createBanNotificationTab()
         return
@@ -1410,25 +1467,32 @@ _task.spawn(function()
         AdminTab=Gui:CreateTab("Admin")
         AdminTab:CreateLabel("Admin Panel - Your HWID: "..currentHWID)
         local banHwidInput=""
+        local banUserIDInput=""
         AdminTab:CreateTextBox("HWID To Ban","AdminBanHwid","",function(v) banHwidInput=v end)
-        AdminTab:CreateButton("Ban HWID",function()
-            if banHwidInput=="" then notify("Admin","Enter HWID first",2) return end
-            if updateBannedList(banHwidInput,true) then
-                notify("Admin","HWID Banned: "..banHwidInput,3)
+        AdminTab:CreateTextBox("User ID To Ban","AdminBanUserID","",function(v) banUserIDInput=v end)
+        AdminTab:CreateButton("Ban HWID/UserID",function()
+            if banHwidInput=="" and banUserIDInput=="" then notify("Admin","Enter HWID or UserID first",2) return end
+            if updateBannedList(banHwidInput~="" and banHwidInput or nil,banUserIDInput~="" and banUserIDInput or nil,true) then
+                logBanToDiscord(lplr.Name)
+                notify("Admin","Ban applied successfully",3)
                 banHwidInput=""
+                banUserIDInput=""
             else
-                notify("Admin","Failed to ban HWID",3)
+                notify("Admin","Failed to ban",3)
             end
         end)
         local unbanHwidInput=""
+        local unbanUserIDInput=""
         AdminTab:CreateTextBox("HWID To Unban","AdminUnbanHwid","",function(v) unbanHwidInput=v end)
-        AdminTab:CreateButton("Unban HWID",function()
-            if unbanHwidInput=="" then notify("Admin","Enter HWID first",2) return end
-            if updateBannedList(unbanHwidInput,false) then
-                notify("Admin","HWID Unbanned: "..unbanHwidInput,3)
+        AdminTab:CreateTextBox("User ID To Unban","AdminUnbanUserID","",function(v) unbanUserIDInput=v end)
+        AdminTab:CreateButton("Unban HWID/UserID",function()
+            if unbanHwidInput=="" and unbanUserIDInput=="" then notify("Admin","Enter HWID or UserID first",2) return end
+            if updateBannedList(unbanHwidInput~="" and unbanHwidInput or nil,unbanUserIDInput~="" and unbanUserIDInput or nil,false) then
+                notify("Admin","Unban applied successfully",3)
                 unbanHwidInput=""
+                unbanUserIDInput=""
             else
-                notify("Admin","Failed to unban HWID",3)
+                notify("Admin","Failed to unban",3)
             end
         end)
         AdminTab:CreateButton("Refresh Ban List",function()
