@@ -1226,33 +1226,47 @@ _task.spawn(function()
     
     local AdminTab=Gui:CreateTab("Admin")
     local adminUnlocked=false
-    AdminTab:CreateTextBoxSend("Admin Password","AdminPass","",function(content)
-        if content=="your_admin_password_here" then
-            adminUnlocked=true
-            adminMode=true
-            notify("Admin","Access Granted!",3)
-        else
-            notify("Admin","Incorrect Password",3)
-        end
-    end)
+    local adminElementsCreated=false
     
-    local function createAdminPanel()
-        if not adminUnlocked then return end
+    local function buildAdminPanel()
+        if adminElementsCreated then return end
+        adminElementsCreated=true
+        
         AdminTab:CreateButton("Ban User by HWID",function()
-            AdminTab:CreateTextBoxSend("Enter HWID to Ban","BanHWID","",function(hwid)
+            local banWindow=Lib:CreateWindow({Title="Ban User",Settings=false})
+            local banTab=banWindow:CreateTab("Ban")
+            banTab:CreateTextBoxSend("Enter HWID to Ban","BanHWIDInput","",function(hwid)
                 if hwid~="" then
                     uploadHWIDToBan(hwid)
                     bannedUsers[hwid]=true
                     notify("Admin","HWID Banned: "..hwid,3)
+                else
+                    notify("Admin","Please enter a valid HWID",2)
                 end
             end)
         end)
+        
         AdminTab:CreateButton("Refresh Ban List",function()
             fetchBannedList()
             notify("Admin","Ban list refreshed",2)
         end)
+        
         AdminTab:CreateLabel("Your HWID: "..currentHWID)
+        AdminTab:CreateLabel("Admin Mode: ENABLED")
     end
+    
+    AdminTab:CreateTextBoxSend("Admin Password","AdminPass","",function(content)
+        if content=="your_admin_password_here" then
+            if not adminUnlocked then
+                adminUnlocked=true
+                adminMode=true
+                notify("Admin","Access Granted!",3)
+                buildAdminPanel()
+            end
+        else
+            notify("Admin","Incorrect Password",3)
+        end
+    end)
     
     if adminUnlocked then createAdminPanel() end
     
