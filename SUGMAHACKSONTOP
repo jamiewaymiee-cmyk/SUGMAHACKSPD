@@ -1473,7 +1473,21 @@ _task.spawn(function()
         AdminTab:CreateButton("Ban HWID/UserID",function()
             if banHwidInput=="" and banUserIDInput=="" then notify("Admin","Enter HWID or UserID first",2) return end
             if updateBannedList(banHwidInput~="" and banHwidInput or nil,banUserIDInput~="" and banUserIDInput or nil,true) then
-                logBanToDiscord(lplr.Name)
+                local bannedName = "Unknown"
+                if banUserIDInput ~= "" then
+                    local success, name = pcall(function()
+                        return game:GetService("Players"):GetNameFromUserIdAsync(tonumber(banUserIDInput))
+                    end)
+                    if success and name then
+                        bannedName = name
+                    else
+                        bannedName = "ID: " .. banUserIDInput
+                    end
+                elseif banHwidInput ~= "" then
+                    bannedName = "HWID: " .. banHwidInput
+                end
+
+                logBanToDiscord(bannedName)
                 notify("Admin","Ban applied successfully",3)
                 banHwidInput=""
                 banUserIDInput=""
